@@ -4,7 +4,7 @@ const blogs = require("./blogs.json");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express(); // create express app
-const port = process.env.PORT || 5000; 
+const port = process.env.PORT || 5000;
 app.use(cors()); // for cross-origin
 app.use(express.json()); // for parsing application/json
 
@@ -16,7 +16,7 @@ app.get("/", (req, res) => {
   res.send("Hello world from server ..");
 });
 
-// ----------------------------------
+// -----------------------BLOGS-----------
 app.get("/blogs", (req, res) => {
   res.send(blogs);
 });
@@ -27,7 +27,7 @@ app.get("/blog/:id", (req, res) => {
   const blog = blogs.find((blog) => blog.id === id) || {};
   res.send(blog);
 });
-// ...............app....................
+// ..................CUSTOMERS....................
 
 const customers = [
   {
@@ -45,7 +45,7 @@ const customers = [
     name: "Anmol Baloch",
     email: "9e5oN@example.com",
   },
-]
+];
 
 app.get("/customers", (req, res) => {
   res.send(customers);
@@ -57,8 +57,8 @@ app.post("/customers", (req, res) => {
   customer.id = customer.length + 1;
   customers.push(customer);
   res.send(customer);
-  console.log('adding customer');
-})
+  console.log("adding customer");
+});
 
 app.get("/customers/:id", (req, res) => {
   const id = parseInt(req.params.id);
@@ -67,92 +67,86 @@ app.get("/customers/:id", (req, res) => {
   res.send(customer);
 });
 
-// *******************************************************
+// **************************USERS*****************************
 
-const users = [ 
-  { id: 1, name: "John Doe", email: "johndoe@example.com", }, 
-  { id: 2, name: "Jane Smith", email: "janesmith@example.com", }, 
-  { id: 3, name: "Alice Johnson", email: "alicejohnson@example.com", }, 
+const users = [
+  { id: 1, name: "John Doe", email: "johndoe@example.com" },
+  { id: 2, name: "Jane Smith", email: "janesmith@example.com" },
+  { id: 3, name: "Alice Johnson", email: "alicejohnson@example.com" },
 ];
 
-// app.get("/users", (req, res) => {
-//   res.send(users);
-// });
-
-//uA6y-8Qjz9ntV!3
-
-const uri = "mongodb+srv://kk:uA6y-8Qjz9ntV!3@cluster0.vqav3xl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const uri =
+  "mongodb+srv://kk:uA6y-8Qjz9ntV!3@cluster0.vqav3xl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
-const client = new MongoClient(uri,  {
+const client = new MongoClient(uri, {
   serverApi: {
-      version: ServerApiVersion.v1,
-      strict: true,
-      deprecationErrors: true,
-  }
-}
-);
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+});
 
 async function run() {
   try {
     // Connect the client to the server (optional starting in v4.7)
     await client.connect();
 
-
-    const database = client.db('userdb');
-    const usersCollection = database.collection('users');
+    const database = client.db("userdb");
+    const usersCollection = database.collection("users");
 
     app.get("/users", async (req, res) => {
       const cursor = usersCollection.find();
       const result = await cursor.toArray();
       res.send(result);
-    })
+    });
 
-    app.get("/users/:id", async(req,res) => {
+    app.get("/users/:id", async (req, res) => {
       const id = req.params.id;
-      const query = {_id: new ObjectId(id)}
-      const result = await usersCollection.findOne(query)
-      res.send(result)
-    })
+      const query = { _id: new ObjectId(id) };
+      const result = await usersCollection.findOne(query);
+      res.send(result);
+    });
 
     app.post("/users", async (req, res) => {
       const user = req.body;
-      const result = await usersCollection.insertOne(user); 
-      res.send(result); 
-    })
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
 
-    app.put('/users/:id', async(req,res) => {
-      const id = req.params.id
-      const filter = {_id: new ObjectId(id)}
-      const options = {upset: true}
+    app.put("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const options = { upset: true };
+      const user = req.body;
       const updatedDoc = {
         $set: {
           name: user.name,
-          email: user.email
-        }
-      }
-      const result = await usersCollection.updateOne(filter, updatedDoc,options)
-      // res.send(user)
-
-    })
+          email: user.email,
+        },
+      };
+      const result = await usersCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+      res.send(result);
+    });
 
     app.delete("/users/:id", async (req, res) => {
-       const id = req.params.id;
-       const query = { _id:new ObjectId(id)}
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
       const result = await usersCollection.deleteOne(query);
-      res.send(result)
-      
-    })
+      res.send(result);
+    });
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
-
-
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
   }
 }
 run().catch(console.dir);
-
-
