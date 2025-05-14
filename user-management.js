@@ -13,7 +13,7 @@ app.listen(port, () => {
 });
 
 app.get("/", (req, res) => {
-  res.send("Hello world from server ..");
+  res.send("Hello world from user-management server ..");
 });
 
 // ----------------------------------

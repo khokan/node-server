@@ -2,3 +2,4 @@
 # npm i express cors
 # npm i nodemon
 # npm install mongodb
+# npm install dotenv --save
