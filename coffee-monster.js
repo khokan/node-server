@@ -16,11 +16,8 @@ app.listen(port, () => {
     res.send("Hello world from coffee-monster server ..");
   });
 
-  app.get("/coffees", (req, res) => {
-    res.send("Hello world from coffee-monster server ..");
-  });
 
-  const uri =`mongodb+srv://${process.env.DB_USER_COFFEE}:${process.env.DB_PASS_COFFEE}@cluster0.vqav3xl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const uri =`mongodb+srv://${process.env.DB_USER_COFFEE}:${process.env.DB_PASS_COFFEE}@cluster0.vqav3xl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri,  {
@@ -39,6 +36,20 @@ async function run() {
 
     const coffesCollection = client.db('coffeDB').collection('coffees')
 
+    app.get("/coffees", async (req, res) => {
+      const result = await coffesCollection.find().toArray();
+      console.log(result)
+      res.send(result);
+    });
+
+    app.get("/coffees/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await coffesCollection.findOne(query);
+      res.send(result);
+    });
+
+
     app.post('/coffees', async (req, res) => {
         const newCoffee = req.body
         const result = await coffesCollection.insertOne(newCoffee)
@@ -46,6 +57,13 @@ async function run() {
         res.send(result)
     })
    
+    app.delete("/coffees/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await coffesCollection.deleteOne(query);
+      res.send(result);
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
