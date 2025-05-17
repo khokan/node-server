@@ -38,12 +38,16 @@ async function run() {
 
     app.get("/coffees", async (req, res) => {
       const result = await coffesCollection.find().toArray();
-      console.log(result)
       res.send(result);
     });
 
     app.get("/coffees/:id", async (req, res) => {
       const id = req.params.id;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid coffee ID format' });
+      }
+    
       const query = { _id: new ObjectId(id) };
       const result = await coffesCollection.findOne(query);
       res.send(result);
@@ -53,10 +57,25 @@ async function run() {
     app.post('/coffees', async (req, res) => {
         const newCoffee = req.body
         const result = await coffesCollection.insertOne(newCoffee)
-        console.log(result)
         res.send(result)
     })
    
+    app.put("/coffees/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const options = { upset: true };
+      const updatedCoffee = req.body;
+      const updatedDoc = {
+        $set: updatedCoffee        
+      };
+      const result = await coffesCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+      res.send(result);
+    });
+
     app.delete("/coffees/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };

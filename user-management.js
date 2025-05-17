@@ -53,7 +53,6 @@ app.get("/customers", (req, res) => {
 
 app.post("/customers", (req, res) => {
   const customer = req.body;
-  console.log(customer);
   customer.id = customer.length + 1;
   customers.push(customer);
   res.send(customer);
