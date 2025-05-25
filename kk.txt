@@ -4,3 +4,4 @@
 # npm install mongodb
 # npm install dotenv --save
 # n250G4vfpAvK0pjS
+# deploy: vercel login -> vercel --prod
