@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config(); // if you don't use data can't be access fron .env file
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");

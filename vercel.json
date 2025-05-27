@@ -2,14 +2,14 @@
     "version": 2,
     "builds": [
         {
-            "src": "./coffee-monster.js",
+            "src": "./carrer-code.js",
             "use": "@vercel/node"
         }
     ],
     "routes": [
         {
             "src": "/(.*)",
-            "dest": "/coffee-monster.js",
+            "dest": "/carrer-code.js",
             "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
         }
     ]
