@@ -2,14 +2,14 @@
     "version": 2,
     "builds": [
         {
-            "src": "./carrer-code.js",
+            "src": "career-code.js",
             "use": "@vercel/node"
         }
     ],
     "routes": [
         {
             "src": "/(.*)",
-            "dest": "/carrer-code.js",
+            "dest": "career-code.js",
             "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
         }
     ]
