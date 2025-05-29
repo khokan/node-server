@@ -65,6 +65,17 @@ async function run() {
       const query = {
         email: email
       }
+
+       // bad way to aggregate data
+       for(const application of result){
+        const jobid = application.jobid;
+        const jobQuery = {_id: new ObjectId(jobid)}
+        const job = await jobsApplications.findOne(jobQuery)
+        application.company = job.company
+        application.title = job.title;
+        application.company_logo = job.company_logo 
+      }
+      
       const result = await jobsApplications.find(query).toArray();
       res.send(result);
     });
