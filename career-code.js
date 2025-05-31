@@ -61,7 +61,7 @@ async function run() {
     app.get("/applications", async (req, res) => {
       const email = req.query.email;
       const query = {
-        email: email,
+        email,
       };
 
       const result = await jobsApplications.find(query).toArray();

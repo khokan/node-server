@@ -81,6 +81,56 @@ async function run() {
       res.send(result);
     });
 
+    // handle like toggle
+    /* client side code
+      axios.patch(`${import.meta.env.VITE_NODE_SERVER_URL}/likes?${id}`, {
+        email: user?.email
+      }).then(data => data?.data).catch(err => console.log(err)) */
+
+    app.patch("/likes/:coffeeId", (req, res) => {
+      const id = req.params.coffeeId;
+      const email = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const coffee = coffesCollection.findOne(filter);
+      const alreadyLike = coffee?.likedBy.includes(email);
+      const updateDoc = alreadyLike
+        ? {
+            $pull: {
+              // pull email from likedBy array
+              likedBy: email,
+            },
+          }
+        : {
+            $addToSet: {
+              // push email into likedBy array
+              likedBy: email,
+            },
+          };
+
+      const result = coffesCollection.updateOne(filter, updateDoc);
+      res.send({
+        message: alreadyLike ? "dislike successful" : "like succesfull",
+        liked: !alreadyLike,
+      });
+    });
+
+    app.post("/place-order/:coffeeId", async (req, res) => {
+      const id = req.params.coffeeId;
+      const orderData = req.body.orderData;
+      const result = await ordersCollection.insertOne(orderData);
+      if (result.acknowledged) {
+        coffesCollection.updateOne(
+          { _d: new ObjectId(id) },
+          {
+            $inc: {
+              quntity: -1,
+            },
+          }
+        );
+      }
+      res.send(result);
+    });
+
     app.post("/users", async (req, res) => {
       const newUser = req.body;
       const result = await usersCollection.insertOne(newUser);
@@ -100,18 +150,14 @@ async function run() {
     });
 
     app.patch("/users", async (req, res) => {
-      const {email, lastSignInTime} = req.body;
-      const filter = {email: email}
+      const { email, lastSignInTime } = req.body;
+      const filter = { email: email };
       const updateDoc = {
-        $set: { lastSignInTime: lastSignInTime  }
-      }
+        $set: { lastSignInTime: lastSignInTime },
+      };
 
-      const result = await usersCollection.updateOne(
-        filter,
-        updateDoc
-      );
+      const result = await usersCollection.updateOne(filter, updateDoc);
       res.send(result);
-
     });
 
     // Send a ping to confirm a successful connection
