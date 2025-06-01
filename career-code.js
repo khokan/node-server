@@ -35,8 +35,25 @@ async function run() {
     const jobsCollection = client.db("careerCode").collection("jobs");
     const jobsApplications = client.db("careerCode").collection("applications");
 
+    app.get("/jobs/applications", async (req, res) => {
+      const email = req.query.email;
+      const query = { hr_email: email };
+      const jobs = await jobsCollection.find(query).toArray();
+      for (const job of jobs) {
+        const applicationQuery = { jobid: job._id.toString() };
+        const applicationCount = await jobsApplications.countDocuments(
+          applicationQuery
+        );
+        job.application_count = applicationCount;
+      }
+      res.send(jobs);
+    });
+
     app.get("/jobs", async (req, res) => {
-      const result = await jobsCollection.find().toArray();
+      const query = {};
+      const email = req.query.email;
+      if (email) query.hr_email = email;
+      const result = await jobsCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -49,6 +66,12 @@ async function run() {
 
       const query = { _id: new ObjectId(id) };
       const result = await jobsCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.post("/jobs", async (req, res) => {
+      const newJob = req.body;
+      const result = await jobsCollection.insertOne(newJob);
       res.send(result);
     });
 
