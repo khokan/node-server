@@ -1,12 +1,22 @@
 require("dotenv").config(); // if you don't use data can't be access fron .env file
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express(); // create express app
 const port = process.env.PORT || 5000;
-app.use(cors()); // for cross-origin
+
+//MiddleWare
 app.use(express.json()); // for parsing application/json
+app.use(cookieParser()); // set cookie-parser
+
+app.use(
+  cors({
+    origin: [process.env.NODE_CLIENT_URL],
+    credentials: true,
+  })
+); // for cross-origin
 
 // jwt token related api
 const jwt = require("jsonwebtoken");
@@ -14,13 +24,38 @@ app.post("/jwt", async (req, res) => {
   const { email } = req.body;
   const user = { email };
   const token = await jwt.sign(user, process.env.JWT_ACCESS_TOKEN, {
-    expiresIn: "1hr",
+    expiresIn: "1d",
   });
-  res.send({ token });
+
+  // set token in the cookies
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: false,
+  });
+
+  res.send({ success: true });
+  // res.send({ token }); // will send if local storage is used in client side
 });
 
-// set cookie-parser
-const cookieParser = require("cookie-parser");
+const logger = (req, res, next) => {
+  console.log("logger in the middleware");
+  next();
+};
+
+const verifyToken = (req, res, next) => {
+  const token = req?.cookies?.token;
+
+  if (!token) {
+    res.status(401).send({ message: "unauthorozed access" });
+  }
+
+  jwt.verify(token, process.env.JWT_ACCESS_TOKEN, (err, decoded) => {
+    if (err) res.status(401).send({ message: "unauthorized access2" });
+    req.decoded = decoded;
+    console.log(decoded.email);
+    next();
+  });
+};
 
 app.listen(port, () => {
   console.log(`server listening on port ${port}`);
@@ -115,12 +150,16 @@ async function run() {
       const result = await jobsApplications.updateOne(filter, updateDoc);
       res.send(result);
     });
-    app.get("/applications", async (req, res) => {
+
+    app.get("/applications", logger, verifyToken, async (req, res) => {
       const email = req.query.email;
+
+      if (email !== req.decoded.email)
+        res.status(404).send({ message: "forbidden access" });
+
       const query = {
         email,
       };
-
       const result = await jobsApplications.find(query).toArray();
 
       // bad way to aggregate data
