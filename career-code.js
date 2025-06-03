@@ -8,6 +8,20 @@ const port = process.env.PORT || 5000;
 app.use(cors()); // for cross-origin
 app.use(express.json()); // for parsing application/json
 
+// jwt token related api
+const jwt = require("jsonwebtoken");
+app.post("/jwt", async (req, res) => {
+  const { email } = req.body;
+  const user = { email };
+  const token = await jwt.sign(user, process.env.JWT_ACCESS_TOKEN, {
+    expiresIn: "1hr",
+  });
+  res.send({ token });
+});
+
+// set cookie-parser
+const cookieParser = require("cookie-parser");
+
 app.listen(port, () => {
   console.log(`server listening on port ${port}`);
 });
@@ -75,12 +89,32 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/applications/jobs/:job_id", async (req, res) => {
+      const job_id = req.params.job_id;
+
+      const query = { jobid: job_id };
+      const result = await jobsApplications.find(query).toArray();
+      res.send(result);
+    });
+
     app.post("/applications", async (req, res) => {
       const newApplication = req.body;
       const result = await jobsApplications.insertOne(newApplication);
       res.send(result);
     });
 
+    app.patch("/applications/:id", async (req, res) => {
+      const id = req.params.id;
+      console.log(id);
+      const filter = {
+        _id: new ObjectId(id),
+      };
+      const updateDoc = {
+        $set: { status: req.body.status },
+      };
+      const result = await jobsApplications.updateOne(filter, updateDoc);
+      res.send(result);
+    });
     app.get("/applications", async (req, res) => {
       const email = req.query.email;
       const query = {
