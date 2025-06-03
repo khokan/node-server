@@ -11,6 +11,14 @@ const port = process.env.PORT || 5000;
 app.use(express.json()); // for parsing application/json
 app.use(cookieParser()); // set cookie-parser
 
+var admin = require("firebase-admin");
+
+var serviceAccount = require("./firebase-admin-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 app.use(
   cors({
     origin: [process.env.NODE_CLIENT_URL],
@@ -55,6 +63,20 @@ const verifyToken = (req, res, next) => {
     console.log(decoded.email);
     next();
   });
+};
+
+const verifyFirebaseToken = async (req, res, next) => {
+  const authHeader = req.headers?.authorization;
+  const token = authHeader.split(" ")[1];
+  console.log(token);
+  if (!token) {
+    res.status(401).send({ message: "unauthorozed access" });
+  }
+
+  const userInfo = await admin.auth().verifyIdToken(token);
+  console.log(userInfo);
+  req.tokenEmail = userInfo;
+  next();
 };
 
 app.listen(port, () => {
@@ -151,10 +173,10 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/applications", logger, verifyToken, async (req, res) => {
+    app.get("/applications", logger, verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
 
-      if (email !== req.decoded.email)
+      if (email !== req.tokenEmail.email)
         res.status(404).send({ message: "forbidden access" });
 
       const query = {
