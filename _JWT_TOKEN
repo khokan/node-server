@@ -1,0 +1,14 @@
+/* 3 Approach to JWT Token Generation
+
+1. generate jwt > send to client >  Store it in the local storage >
+send token to the server using header > on the server verify token
+
+Best approach in general
+2. generate token > set token to the cookies > ensure client and server exchange cookies >
+ on the server verify token 
+
+ firebase authentication approach
+ 1. already have the token in firebase (client side) > We will send the token to the server
+ using auth header > verify the token
+
+ */

@@ -65,18 +65,31 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+const verifyTokenEmail = (req, res, next) => {
+  if (req.query.email !== req.tokenEmail?.email) {
+    return res.status(403).send({ message: "forbidden access" });
+  }
+  next();
+};
+
 const verifyFirebaseToken = async (req, res, next) => {
   const authHeader = req.headers?.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer "))
+    res.status(401).send({ message: "unauthorozed access" });
+
   const token = authHeader.split(" ")[1];
-  console.log(token);
   if (!token) {
     res.status(401).send({ message: "unauthorozed access" });
   }
 
-  const userInfo = await admin.auth().verifyIdToken(token);
-  console.log(userInfo);
-  req.tokenEmail = userInfo;
-  next();
+  try {
+    const userInfo = await admin.auth().verifyIdToken(token);
+    req.tokenEmail = userInfo;
+    next();
+  } catch (error) {
+    res.status(401).send({ message: "unauthorozed access" });
+  }
 };
 
 app.listen(port, () => {
@@ -106,19 +119,24 @@ async function run() {
     const jobsCollection = client.db("careerCode").collection("jobs");
     const jobsApplications = client.db("careerCode").collection("applications");
 
-    app.get("/jobs/applications", async (req, res) => {
-      const email = req.query.email;
-      const query = { hr_email: email };
-      const jobs = await jobsCollection.find(query).toArray();
-      for (const job of jobs) {
-        const applicationQuery = { jobid: job._id.toString() };
-        const applicationCount = await jobsApplications.countDocuments(
-          applicationQuery
-        );
-        job.application_count = applicationCount;
+    app.get(
+      "/jobs/applications",
+      verifyFirebaseToken,
+      verifyTokenEmail,
+      async (req, res) => {
+        const email = req.query.email;
+        const query = { hr_email: email };
+        const jobs = await jobsCollection.find(query).toArray();
+        for (const job of jobs) {
+          const applicationQuery = { jobid: job._id.toString() };
+          const applicationCount = await jobsApplications.countDocuments(
+            applicationQuery
+          );
+          job.application_count = applicationCount;
+        }
+        res.send(jobs);
       }
-      res.send(jobs);
-    });
+    );
 
     app.get("/jobs", async (req, res) => {
       const query = {};
@@ -162,7 +180,6 @@ async function run() {
 
     app.patch("/applications/:id", async (req, res) => {
       const id = req.params.id;
-      console.log(id);
       const filter = {
         _id: new ObjectId(id),
       };
@@ -173,29 +190,32 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/applications", logger, verifyFirebaseToken, async (req, res) => {
-      const email = req.query.email;
+    app.get(
+      "/applications",
+      logger,
+      verifyFirebaseToken,
+      verifyTokenEmail,
+      async (req, res) => {
+        const email = req.query.email;
 
-      if (email !== req.tokenEmail.email)
-        res.status(404).send({ message: "forbidden access" });
+        const query = {
+          email,
+        };
+        const result = await jobsApplications.find(query).toArray();
 
-      const query = {
-        email,
-      };
-      const result = await jobsApplications.find(query).toArray();
+        // bad way to aggregate data
+        for (const application of result) {
+          const jobid = application.jobid;
+          const jobQuery = { _id: new ObjectId(jobid) };
+          const job = await jobsCollection.findOne(jobQuery);
+          application.company = job.company;
+          application.title = job.title;
+          application.company_logo = job.company_logo;
+        }
 
-      // bad way to aggregate data
-      for (const application of result) {
-        const jobid = application.jobid;
-        const jobQuery = { _id: new ObjectId(jobid) };
-        const job = await jobsCollection.findOne(jobQuery);
-        application.company = job.company;
-        application.title = job.title;
-        application.company_logo = job.company_logo;
+        res.send(result);
       }
-
-      res.send(result);
-    });
+    );
 
     // Send a ping to confirm a successful connection
     //await client.db("admin").command({ ping: 1 });
