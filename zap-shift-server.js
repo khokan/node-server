@@ -1,51 +1,29 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const cookieParser = require("cookie-parser");
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const admin = require("firebase-admin");
 
-// const jwt = require("jsonwebtoken");
+// Load environment variables from .env file
+dotenv.config();
 
+const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
+
+const app = express();
 const port = process.env.PORT || 5000;
 
-// FireBase  admin SDK
-const admin = require("firebase-admin");
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+
+
 const serviceAccount = require("./Firebase-admin-key-coffee-store.json");
+
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-
-const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY); // Use your Stripe secret key
-
-const app = express();
-// middleware
-const corsOptions = {
-  origin: ["http://localhost:5173", "http://localhost:5174"],
-  credentials: true,
-  optionSuccessStatus: 200,
-};
-app.use(cors(corsOptions));
-
-app.use(express.json());
-app.use(cookieParser());
-
-const verifyToken = async (req, res, next) => {
-  const token = req.cookies?.token;
-
-  if (!token) {
-    return res.status(401).send({ message: "unauthorized access" });
-  }
-
-  // jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-  //   if (err) {
-  //     console.log(err);
-  //     return res.status(401).send({ message: "unauthorized access" });
-  //   }
-  //   req.user = decoded;
-  //   next();
-  // });
-};
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(process.env.MONGODB_URI, {
@@ -53,33 +31,20 @@ const client = new MongoClient(process.env.MONGODB_URI, {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  },
+    }
 });
 
 async function run() {
+    try {
   // Connect the client to the server	(optional starting in v4.7)
   await client.connect();
 
-  const db = client.db("parceldb");
-  const parcelCollection = db.collection("parcels");
-  const paymentCollection = db.collection("payments");
+        const db = client.db('parceldb'); // database name
   const usersCollection = db.collection('users');
+        const parcelsCollection = db.collection('parcels');
+        const trackingsCollection = db.collection("trackings");
+        const paymentsCollection = db.collection('payments');
   const ridersCollection = db.collection('riders');
-
-  //  // Generate jwt token
-  //   app.post("/jwt", async (req, res) => {
-  //     const email = req.body;
-  //     const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
-  //       expiresIn: "365d",
-  //     });
-  //     res
-  //       .cookie("token", token, {
-  //         httpOnly: true,
-  //         secure: process.env.NODE_ENV === "production",
-  //         sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-  //       })
-  //       .send({ success: true });
-  //   });
 
   // custom middlewares
   const verifyFBToken = async (req, res, next) => {
@@ -103,23 +68,69 @@ async function run() {
       }
   }
         
-  try {
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const query = { email }
+            const user = await usersCollection.findOne(query);
+            if (!user || user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
 
+        const verifyRider = async (req, res, next) => {
+            const email = req.decoded.email;
+            const query = { email }
+            const user = await usersCollection.findOne(query);
+            if (!user || user.role !== 'rider') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
+
+        app.get("/users/search", async (req, res) => {
+            const emailQuery = req.query.email;
+            if (!emailQuery) {
+                return res.status(400).send({ message: "Missing email query" });
+            }
+
+            const regex = new RegExp(emailQuery, "i"); // case-insensitive partial match
    
-    // Logout
-    app.get("/logout", async (req, res) => {
       try {
-        res
-          .clearCookie("token", {
-            maxAge: 0,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-          })
-          .send({ success: true });
-      } catch (err) {
-        res.status(500).send(err);
+                const users = await usersCollection
+                    .find({ email: { $regex: regex } })
+                    // .project({ email: 1, createdAt: 1, role: 1 })
+                    .limit(10)
+                    .toArray();
+                res.send(users);
+            } catch (error) {
+                console.error("Error searching users", error);
+                res.status(500).send({ message: "Error searching users" });
+            }
+        });
+
+        // GET: Get user role by email
+        app.get('/users/:email/role', async (req, res) => {
+            try {
+                const email = req.params.email;
+
+                if (!email) {
+                    return res.status(400).send({ message: 'Email is required' });
+                }
+
+                const user = await usersCollection.findOne({ email });
+
+                if (!user) {
+                    return res.status(404).send({ message: 'User not found' });
+                }
+
+                res.send({ role: user.role || 'user' });
+            } catch (error) {
+                console.error('Error getting user role:', error);
+                res.status(500).send({ message: 'Failed to get role' });
       }
     });
+
 
     app.post('/users', async (req, res) => {
             const email = req.body.email;
@@ -133,76 +144,261 @@ async function run() {
             res.send(result);
         })
 
-    // add a parcel in db
-    app.post("/parcels", async (req, res) => {
-      const parcel = req.body;
-      const result = await parcelCollection.insertOne(parcel);
-      res.send(result);
+        app.patch("/users/:id/role", verifyFBToken, verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { role } = req.body;
+
+            if (!["admin", "user"].includes(role)) {
+                return res.status(400).send({ message: "Invalid role" });
+            }
+
+            try {
+                const result = await usersCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { role } }
+                );
+                res.send({ message: `User role updated to ${role}`, result });
+            } catch (error) {
+                console.error("Error updating user role", error);
+                res.status(500).send({ message: "Failed to update user role" });
+            }
     });
 
-    // GET /api/parcels
-    // Retrieves parcels sorted by creationDate (latest first).
-    // If query param 'email' is provided, filter results by creatorEmail.
-    app.get("/parcels", async (req, res) => {
+
+        // parcels api
+        // GET: All parcels OR parcels by user (created_by), sorted by latest
+        app.get('/parcels', verifyFBToken, async (req, res) => {
       try {
-        const { email } = req.query;
-        // Build filter: if email is provided, filter by creatorEmail; otherwise, no filtering.
-        const filter = email ? { created_by: email } : {};
-        // Find parcels and sort by creationDate descending
-        const parcels = await parcelCollection
-          .find(filter)
-          .sort({ creation_date: -1 })
-          .toArray();
+                const { email, payment_status, delivery_status } = req.query;
+                let query = {}
+                if (email) {
+                    query = { created_by: email }
+                }
+
+                if (payment_status) {
+                    query.payment_status = payment_status
+                }
+
+                if (delivery_status) {
+                    query.delivery_status = delivery_status
+                }
+
+                const options = {
+                    sort: { createdAt: -1 }, // Newest first
+                };
+
+                console.log('parcel query', req.query, query)
+
+                const parcels = await parcelsCollection.find(query, options).toArray();
         res.send(parcels);
       } catch (error) {
-        console.error("Error retrieving parcels:", error);
-        res.status(500).json({ message: "Server error fetching parcels" });
+                console.error('Error fetching parcels:', error);
+                res.status(500).send({ message: 'Failed to get parcels' });
       }
     });
 
+        // GET: Get a specific parcel by ID
     app.get('/parcels/:id', async (req, res) => {
       try {
+                const id = req.params.id;
 
-        const  id  = req.params;
-
-        const parcel = await parcelCollection.findOne({ _id: new ObjectId(id)});
+                const parcel = await parcelsCollection.findOne({ _id: new ObjectId(id) });
 
         if (!parcel) {
-          return res.status(404).json({ error: 'Parcel not found' });
+                    return res.status(404).send({ message: 'Parcel not found' });
         }
+
         res.send(parcel);
       } catch (error) {
-        res.status(500).json({ error: error.message });
+                console.error('Error fetching parcel:', error);
+                res.status(500).send({ message: 'Failed to fetch parcel' });
       }
     });
 
-    // DELETE /api/parcels/:id
-    app.delete("/parcels/:id", async (req, res) => {
+        // GET: Get pending delivery tasks for a rider
+        app.get('/rider/parcels', verifyFBToken, verifyRider, async (req, res) => {
+            try {
+                const email = req.query.email;
+
+                if (!email) {
+                    return res.status(400).send({ message: 'Rider email is required' });
+                }
+
+                const query = {
+                    assigned_rider_email: email,
+                    delivery_status: { $in: ['rider_assigned', 'in_transit'] },
+                };
+
+                const options = {
+                    sort: { creation_date: -1 }, // Newest first
+                };
+
+                const parcels = await parcelsCollection.find(query, options).toArray();
+                res.send(parcels);
+            } catch (error) {
+                console.error('Error fetching rider tasks:', error);
+                res.status(500).send({ message: 'Failed to get rider tasks' });
+            }
+        });
+
+        // GET: Load completed parcel deliveries for a rider
+        app.get('/rider/completed-parcels', verifyFBToken, verifyRider, async (req, res) => {
+            try {
+                const email = req.query.email;
+
+                if (!email) {
+                    return res.status(400).send({ message: 'Rider email is required' });
+                }
+
+                const query = {
+                    assigned_rider_email: email,
+                    delivery_status: {
+                        $in: ['delivered', 'service_center_delivered']
+                    },
+                };
+
+                const options = {
+                    sort: { creation_date: -1 }, // Latest first
+                };
+
+                const completedParcels = await parcelsCollection.find(query, options).toArray();
+
+                res.send(completedParcels);
+
+            } catch (error) {
+                console.error('Error loading completed parcels:', error);
+                res.status(500).send({ message: 'Failed to load completed deliveries' });
+            }
+        });
+
+
+
+        // POST: Create a new parcel
+        app.post('/parcels', async (req, res) => {
       try {
-        const { id } = req.params;
-
-        // Validate ObjectId format
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ message: "Invalid ID format" });
-        }
-
-        // MongoDB with Mongoose example
-        const deletedParcel = await parcelCollection.deleteOne({
-          _id: new ObjectId(id),
+                const newParcel = req.body;
+                // newParcel.createdAt = new Date();
+                const result = await parcelsCollection.insertOne(newParcel);
+                res.status(201).send(result);
+            } catch (error) {
+                console.error('Error inserting parcel:', error);
+                res.status(500).send({ message: 'Failed to create parcel' });
+            }
         });
 
-        if (!deletedParcel) {
-          return res.status(404).json({ message: "Parcel not found" });
-        }
+        app.patch("/parcels/:id/assign", async (req, res) => {
+            const parcelId = req.params.id;
+            const { riderId, riderName, riderEmail } = req.body;
 
-        res.send(deletedParcel);
+            try {
+                // Update parcel
+                await parcelsCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    {
+                        $set: {
+                            delivery_status: "rider_assigned",
+                            assigned_rider_id: riderId,
+                            assigned_rider_email: riderEmail,
+                            assigned_rider_name: riderName,
+                        },
+                    }
+                );
+
+                // Update rider
+                await ridersCollection.updateOne(
+                    { _id: new ObjectId(riderId) },
+                    {
+                        $set: {
+                            work_status: "in_delivery",
+                        },
+        }
+                );
+
+                res.send({ message: "Rider assigned" });
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: "Failed to assign rider" });
+            }
+        });
+
+        app.patch("/parcels/:id/status", async (req, res) => {
+            const parcelId = req.params.id;
+            const { status } = req.body;
+            const updatedDoc = {
+                delivery_status: status
+            }
+
+            if (status === 'in_transit') {
+                updatedDoc.picked_at = new Date().toISOString()
+            }
+            else if (status === 'delivered') {
+                updatedDoc.delivered_at = new Date().toISOString()
+            }
+
+            try {
+                const result = await parcelsCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    {
+                        $set: updatedDoc
+                    }
+                );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to update status" });
+            }
+        });
+
+        app.patch("/parcels/:id/cashout", async (req, res) => {
+            const id = req.params.id;
+            const result = await parcelsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        cashout_status: "cashed_out",
+                        cashed_out_at: new Date()
+                    }
+                }
+            );
+            res.send(result);
+        });
+
+
+
+        app.delete('/parcels/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+
+                const result = await parcelsCollection.deleteOne({ _id: new ObjectId(id) });
+
+                res.send(result);
       } catch (error) {
-        res.status(500).json({
-          message: "Server error",
-          error: error.message,
-        });
+                console.error('Error deleting parcel:', error);
+                res.status(500).send({ message: 'Failed to delete parcel' });
       }
     });
+
+        app.get("/trackings/:trackingId", async (req, res) => {
+            const trackingId = req.params.trackingId;
+
+            const updates = await trackingsCollection
+                .find({ tracking_id: trackingId })
+                .sort({ timestamp: 1 }) // sort by time ascending
+                .toArray();
+
+            res.json(updates);
+        });
+
+        app.post("/trackings", async (req, res) => {
+            const update = req.body;
+
+            update.timestamp = new Date(); // ensure correct timestamp
+            if (!update.tracking_id || !update.status) {
+                return res.status(400).json({ message: "tracking_id and status are required." });
+            }
+
+            const result = await trackingsCollection.insertOne(update);
+            res.status(201).json(result);
+        });
 
      app.post('/riders', async (req, res) => {
             const rider = req.body;
@@ -210,7 +406,7 @@ async function run() {
             res.send(result);
         })
 
-          app.get("/riders/pending", async (req, res) => {
+        app.get("/riders/pending", verifyFBToken, verifyAdmin, async (req, res) => {
             try {
                 const pendingRiders = await ridersCollection
                     .find({ status: "pending" })
@@ -223,14 +419,32 @@ async function run() {
             }
         });
 
-      app.get("/riders/active", async (req, res) => {
+        app.get("/riders/active", verifyFBToken, verifyAdmin, async (req, res) => {
         const result = await ridersCollection.find({ status: "active" }).toArray();
         res.send(result);
     });
 
+        app.get("/riders/available", async (req, res) => {
+            const { district } = req.query;
+
+            try {
+                const riders = await ridersCollection
+                    .find({
+                        district,
+                        // status: { $in: ["approved", "active"] },
+                        // work_status: "available",
+                    })
+                    .toArray();
+
+                res.send(riders);
+            } catch (err) {
+                res.status(500).send({ message: "Failed to load riders" });
+            }
+        });
+
     app.patch("/riders/:id/status", async (req, res) => {
         const { id } = req.params;
-        const { status } = req.body;
+            const { status, email } = req.body;
         const query = { _id: new ObjectId(id) }
         const updateDoc = {
             $set:
@@ -244,11 +458,25 @@ async function run() {
                 query, updateDoc
 
             );
+
+                // update user role for accepting rider
+                if (status === 'active') {
+                    const userQuery = { email };
+                    const userUpdateDoc = {
+                        $set: {
+                            role: 'rider'
+                        }
+                    };
+                    const roleResult = await usersCollection.updateOne(userQuery, userUpdateDoc)
+                    console.log(roleResult.modifiedCount)
+                }
+
             res.send(result);
         } catch (err) {
             res.status(500).send({ message: "Failed to update rider status" });
         }
     });
+
 
    app.post("/tracking", async (req, res) => {
             const { tracking_id, parcel_id, status, message, updated_by='' } = req.body;
@@ -266,13 +494,34 @@ async function run() {
             res.send({ success: true, insertedId: result.insertedId });
         });
      
+
+        app.get('/payments', verifyFBToken, async (req, res) => {
+
+            try {
+                const userEmail = req.query.email;
+                console.log('decocded', req.decoded)
+                if (req.decoded.email !== userEmail) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
+
+                const query = userEmail ? { email: userEmail } : {};
+                const options = { sort: { paid_at: -1 } }; // Latest first
+
+                const payments = await paymentsCollection.find(query, options).toArray();
+                res.send(payments);
+            } catch (error) {
+                console.error('Error fetching payment history:', error);
+                res.status(500).send({ message: 'Failed to get payments' });
+            }
+        });
+
     // POST: Record payment and update parcel status
         app.post('/payments', async (req, res) => {
             try {
                 const { parcelId, email, amount, paymentMethod, transactionId } = req.body;
 
                 // 1. Update parcel's payment_status
-                const updateResult = await parcelCollection.updateOne(
+                const updateResult = await parcelsCollection.updateOne(
                     { _id: new ObjectId(parcelId) },
                     {
                         $set: {
@@ -310,24 +559,10 @@ async function run() {
         });
 
 
-  app.get('/payments', async (req, res) => {
-            try {
-                const userEmail = req.query.email;
-
-                const query = userEmail ? { email: userEmail } : {};
-                const options = { sort: { paid_at: -1 } }; // Latest first
-
-                const payments = await paymentCollection.find(query, options).toArray();
-                res.send(payments);
-            } catch (error) {
-                console.error('Error fetching payment history:', error);
-                res.status(500).send({ message: 'Failed to get payments' });
-            }
-        });
 
   app.post('/create-payment-intent', async (req, res) => {
-      try {
         const amountInCents = req.body.amountInCents
+            try {
         const paymentIntent = await stripe.paymentIntents.create({
           amount: amountInCents, // Amount in cents
           currency: 'usd',
@@ -343,19 +578,22 @@ async function run() {
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
+        // await client.close();
   }
 }
 run().catch(console.dir);
 
-app.get("/", (req, res) => {
-  res.send("Hello from zap-shift Server..");
+
+
+// Sample route
+app.get('/', (req, res) => {
+    res.send('Parcel Server is running');
 });
 
+// Start the server
 app.listen(port, () => {
-  console.log(`zap-shift is running on port ${port}`);
+    console.log(`Server is listening on port ${port}`);
 });
