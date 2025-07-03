@@ -4,7 +4,7 @@ const cors = require('cors')
 const cookieParser = require('cookie-parser')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const jwt = require('jsonwebtoken')
-
+const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY)
 const port = process.env.PORT || 5000
 const app = express()
 // middleware
@@ -34,7 +34,6 @@ const verifyToken = async (req, res, next) => {
   })
 }
 
-
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(process.env.MONGODB_URI, {
   serverApi: {
@@ -50,6 +49,7 @@ async function run() {
 
   const db = client.db('plantdb')
   const plantsCollection = db.collection('plants')
+  const ordersCollection = db.collection('orders')
   try {
     // Generate jwt token
     app.post('/jwt', async (req, res) => {
@@ -89,6 +89,7 @@ async function run() {
 
     // get all plants data from db
     app.get('/plants', async (req, res) => {
+      console.log(req.query)
       const result = await plantsCollection.find().toArray()
       res.send(result)
     })
@@ -99,6 +100,33 @@ async function run() {
       const result = await plantsCollection.findOne({
         _id: new ObjectId(id),
       })
+      res.send(result)
+    })
+
+    // create payment intent for order
+    app.post('/create-payment-intent', async (req, res) => {
+      const { plantId, quantity } = req.body
+      const plant = await plantsCollection.findOne({
+        _id: new ObjectId(plantId),
+      })
+      if (!plant) return res.status(404).send({ message: 'Plant Not Found' })
+      const totalPrice = quantity * plant?.price * 100
+      // stripe...
+      const { client_secret } = await stripe.paymentIntents.create({
+        amount: totalPrice,
+        currency: 'usd',
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      })
+
+      res.send({ clientSecret: client_secret })
+    })
+
+    // save order data in orders collection in db
+    app.post('/order', async (req, res) => {
+      const orderData = req.body
+      const result = await ordersCollection.insertOne(orderData)
       res.send(result)
     })
 
