@@ -50,6 +50,7 @@ async function run() {
   const db = client.db('plantdb')
   const plantsCollection = db.collection('plants')
   const ordersCollection = db.collection('orders')
+  const usersCollection = db.collection('users')
   try {
     // Generate jwt token
     app.post('/jwt', async (req, res) => {
@@ -89,7 +90,6 @@ async function run() {
 
     // get all plants data from db
     app.get('/plants', async (req, res) => {
-      console.log(req.query)
       const result = await plantsCollection.find().toArray()
       res.send(result)
     })
@@ -123,10 +123,60 @@ async function run() {
       res.send({ clientSecret: client_secret })
     })
 
+    // save or update a users info in db
+    app.post('/user', async (req, res) => {
+      const userData = req.body
+      userData.role = 'customer'
+      userData.created_at = new Date().toISOString()
+      userData.last_loggedIn = new Date().toISOString()
+      const query = {
+        email: userData?.email,
+      }
+      const alreadyExists = await usersCollection.findOne(query)
+      console.log('User already exists: ', !!alreadyExists)
+      if (!!alreadyExists) {
+        console.log('Updating user data......')
+        const result = await usersCollection.updateOne(query, {
+          $set: { last_loggedIn: new Date().toISOString() },
+        })
+        return res.send(result)
+      }
+
+      console.log('Creating user data......')
+      // return console.log(userData)
+      const result = await usersCollection.insertOne(userData)
+      res.send(result)
+    })
+
+    // get a user's role
+    app.get('/user/role/:email', async (req, res) => {
+      const email = req.params.email
+      const result = await usersCollection.findOne({ email })
+      if (!result) return res.status(404).send({ message: 'User Not Found.' })
+      res.send({ role: result?.role })
+    })
+
     // save order data in orders collection in db
     app.post('/order', async (req, res) => {
       const orderData = req.body
       const result = await ordersCollection.insertOne(orderData)
+      res.send(result)
+    })
+
+    // update plant quantity(increase/decrease)
+    app.patch('/quantity-update/:id', async (req, res) => {
+      const id = req.params.id
+      const { quantityToUpdate, status } = req.body
+      const filter = { _id: new ObjectId(id) }
+      const updateDoc = {
+        $inc: {
+          quantity:
+            status === 'increase' ? quantityToUpdate : -quantityToUpdate,
+        },
+      }
+
+      const result = await plantsCollection.updateOne(filter, updateDoc)
+      console.log(result)
       res.send(result)
     })
 
