@@ -17,8 +17,8 @@ app.use(cors());
 app.use(express.json());
 
 
-
-const serviceAccount = require("./Firebase-admin-key-coffee-store.json");
+const decodedKey = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8');
+const serviceAccount = JSON.parse(decodedKey);
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -39,7 +39,7 @@ async function run() {
   // Connect the client to the server	(optional starting in v4.7)
   await client.connect();
 
-        const db = client.db('parceldb'); // database name
+        const db = client.db('parcelDB'); // database name
   const usersCollection = db.collection('users');
         const parcelsCollection = db.collection('parcels');
         const trackingsCollection = db.collection("trackings");
@@ -214,6 +214,29 @@ async function run() {
                 res.status(500).send({ message: 'Failed to fetch parcel' });
       }
     });
+
+        app.get('/parcels/delivery/status-count', async (req, res) => {
+            const pipeline = [
+                {
+                    $group: {
+                        _id: '$delivery_status',
+                        count: {
+                            $sum: 1
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        status: '$_id',
+                        count: 1,
+                        _id: 0
+                    }
+                }
+            ];
+
+            const result = await parcelsCollection.aggregate(pipeline).toArray();
+            res.send(result);
+        })
 
         // GET: Get pending delivery tasks for a rider
         app.get('/rider/parcels', verifyFBToken, verifyRider, async (req, res) => {
