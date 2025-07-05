@@ -215,28 +215,43 @@ async function run() {
       }
     });
 
-        app.get('/parcels/delivery/status-count', async (req, res) => {
-            const pipeline = [
-                {
-                    $group: {
-                        _id: '$delivery_status',
-                        count: {
-                            $sum: 1
-                        }
-                    }
-                },
-                {
-                    $project: {
-                        status: '$_id',
-                        count: 1,
-                        _id: 0
-                    }
-                }
-            ];
+     app.get('/parcels/delivery/status-count', async (req, res) => {
+    const email = req.query.email;
 
-            const result = await parcelsCollection.aggregate(pipeline).toArray();
-            res.send(result);
-        })
+    const pipeline = [];
+
+    // Conditionally apply filter if email is provided
+    if (email) {
+        pipeline.push({
+            $match: { assigned_rider_email: email }
+        });
+    }
+
+    pipeline.push(
+        {
+            $group: {
+                _id: '$delivery_status',
+                count: { $sum: 1 }
+            }
+        },
+        {
+            $project: {
+                status: '$_id',
+                count: 1,
+                _id: 0
+            }
+        }
+    );
+
+    try {
+        const result = await parcelsCollection.aggregate(pipeline).toArray();
+        res.send(result);
+    } catch (err) {
+        console.error('Aggregation error:', err);
+        res.status(500).send({ error: 'Internal server error' });
+    }
+});
+
 
         // GET: Get pending delivery tasks for a rider
         app.get('/rider/parcels', verifyFBToken, verifyRider, async (req, res) => {
