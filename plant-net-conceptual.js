@@ -95,8 +95,9 @@ async function run() {
         })
         .send({ success: true })
     })
+
     // Logout
-    app.get('/logout', async (req, res) => {
+      app.get('/logout', async (req, res) => {
       try {
         res
           .clearCookie('token', {
@@ -232,7 +233,6 @@ async function run() {
 
     // get all users for admin
     app.get('/all-users', verifyToken, verifyAdmin, async (req, res) => {
-      console.log(req.user)
       const filter = {
         email: {
           $ne: req?.user?.email,
@@ -242,6 +242,23 @@ async function run() {
       res.send(result)
     })
 
+    // update order status
+    app.patch(
+      '/seller/order/status/:id',
+      async (req, res) => {   
+        const id = req.params.id
+        const { status } = req.body
+        const filter = { _id: new ObjectId(id) }
+        const updateDoc = {
+          $set: {
+            status,
+          },
+        }
+        const result = await ordersCollection.updateOne(filter, updateDoc)
+        console.log(result)
+        res.send(result)
+      }
+    )
     // update a user's role
     app.patch(
       '/user/role/update/:email',
