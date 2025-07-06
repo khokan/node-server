@@ -20,7 +20,7 @@ app.use(cookieParser())
 
 const verifyToken = async (req, res, next) => {
   const token = req.cookies?.token
-
+  console.log('Token: ', token)
   if (!token) {
     return res.status(401).send({ message: 'unauthorized access' })
   }
@@ -52,12 +52,41 @@ async function run() {
   const ordersCollection = db.collection('orders')
   const usersCollection = db.collection('users')
   try {
+    const verifyAdmin = async (req, res, next) => {
+      const email = req?.user?.email
+      const user = await usersCollection.findOne({
+        email,
+      })
+      console.log(user?.role)
+      if (!user || user?.role !== 'admin')
+        return res
+          .status(403)
+          .send({ message: 'Admin only Actions!', role: user?.role })
+
+      next()
+    }
+
+    const verifySeller = async (req, res, next) => {
+      const email = req?.user?.email
+      const user = await usersCollection.findOne({
+        email,
+      })
+      console.log(user?.role)
+      if (!user || user?.role !== 'seller')
+        return res
+          .status(403)
+          .send({ message: 'Admin only Actions!', role: user?.role })
+
+      next()
+    }
+
     // Generate jwt token
     app.post('/jwt', async (req, res) => {
       const email = req.body
       const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: '365d',
       })
+      console.log('Token generated: ', token)
       res
         .cookie('token', token, {
           httpOnly: true,
@@ -82,7 +111,7 @@ async function run() {
     })
 
     // add a plant in db
-    app.post('/add-plant', async (req, res) => {
+    app.post('/add-plant', verifyToken, verifySeller, async (req, res) => {
       const plant = req.body
       const result = await plantsCollection.insertOne(plant)
       res.send(result)
@@ -163,6 +192,27 @@ async function run() {
       res.send(result)
     })
 
+    // get all order info for customer
+    app.get('/orders/customer/:email', verifyToken, async (req, res) => {
+      const email = req.params.email
+      const filter = { 'customer.email': email }
+      const result = await ordersCollection.find(filter).toArray()
+      res.send(result)
+    })
+
+    // get all order info for seller
+    app.get(
+      '/orders/seller/:email',
+      verifyToken,
+      verifySeller,
+      async (req, res) => {
+        const email = req.params.email
+        const filter = { 'seller.email': email }
+        const result = await ordersCollection.find(filter).toArray()
+        res.send(result)
+      }
+    )
+
     // update plant quantity(increase/decrease)
     app.patch('/quantity-update/:id', async (req, res) => {
       const id = req.params.id
@@ -178,6 +228,106 @@ async function run() {
       const result = await plantsCollection.updateOne(filter, updateDoc)
       console.log(result)
       res.send(result)
+    })
+
+    // get all users for admin
+    app.get('/all-users', verifyToken, verifyAdmin, async (req, res) => {
+      console.log(req.user)
+      const filter = {
+        email: {
+          $ne: req?.user?.email,
+        },
+      }
+      const result = await usersCollection.find(filter).toArray()
+      res.send(result)
+    })
+
+    // update a user's role
+    app.patch(
+      '/user/role/update/:email',
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const email = req.params.email
+        const { role } = req.body
+        console.log(role)
+        const filter = { email: email }
+        const updateDoc = {
+          $set: {
+            role,
+            status: 'verified',
+          },
+        }
+        const result = await usersCollection.updateOne(filter, updateDoc)
+        console.log(result)
+        res.send(result)
+      }
+    )
+
+    // become seller request
+    app.patch(
+      '/become-seller-request/:email',
+      verifyToken,
+      async (req, res) => {
+        const email = req.params.email
+
+        const filter = { email: email }
+        const updateDoc = {
+          $set: {
+            status: 'requested',
+          },
+        }
+        const result = await usersCollection.updateOne(filter, updateDoc)
+        console.log(result)
+        res.send(result)
+      }
+    )
+
+    // admin stats
+    app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
+      const totalUser = await usersCollection.estimatedDocumentCount()
+      const totalPlant = await plantsCollection.estimatedDocumentCount()
+      const totalOrder = await ordersCollection.estimatedDocumentCount()
+
+      // mongodb aggregation
+      const result = await ordersCollection
+        .aggregate([
+          {
+            // covert id into date
+            $addFields: {
+              createdAt: { $toDate: '$_id' },
+            },
+          },
+          {
+            //Group data by date
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: '%Y-%m-%d',
+                  date: '$createdAt',
+                },
+              },
+              revenue: { $sum: '$price' },
+              order: { $sum: 1 },
+            },
+          },
+        ])
+        .toArray()
+
+      const barChartData = result.map(data => ({
+        date: data._id,
+        revenue: data.revenue,
+        order: data.order,
+      }))
+      const totalRevenue = result.reduce((sum, data) => sum + data?.revenue, 0)
+
+      res.send({
+        totalUser,
+        totalPlant,
+        barChartData,
+        totalOrder,
+        totalRevenue,
+      })
     })
 
      // Send a ping to confirm a successful connection
