@@ -347,6 +347,41 @@ async function run() {
       })
     })
 
+    // seller stats
+    app.get('/seller-stats', verifyToken, verifySeller, async (req, res) => {
+      const email = req?.user?.email;
+      const sellerOrders = await ordersCollection.find({ 'seller.email': email }).toArray();
+
+      const totalOrder = sellerOrders.length;
+      const totalRevenue = sellerOrders.reduce((sum, order) => sum + order.price, 0);
+
+      const barChartData = sellerOrders
+        .map(order => ({
+          createdAt: new Date(parseInt(order._id.toString().substring(0, 8), 16) * 1000), // Convert ObjectId to Date
+          price: order.price,
+        }))
+        .reduce((acc, order) => {
+          const dateStr = order.createdAt.toISOString().split('T')[0];
+          const existing = acc.find(item => item.date === dateStr);
+          if (existing) {
+            existing.revenue += order.price;
+            existing.order += 1;
+          } else {
+            acc.push({ date: dateStr, revenue: order.price, order: 1 });
+          }
+          return acc;
+        }, []);
+
+      res.send({
+        totalOrder,
+        totalRevenue,
+        barChartData,
+      });
+    });
+
+
+    //seller statistics
+
      // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
